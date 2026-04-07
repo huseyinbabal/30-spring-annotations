@@ -1,0 +1,52 @@
+{
+  "realm": "taskapi",
+  "enabled": true,
+  "requiredActions": [
+    {
+      "alias": "VERIFY_PROFILE",
+      "name": "Verify Profile",
+      "providerId": "VERIFY_PROFILE",
+      "enabled": false,
+      "defaultAction": false
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "task-api-client",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "admin" },
+      { "name": "user" }
+    ]
+  },
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Developer",
+      "email": "alice@example.com",
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "alice123", "temporary": false }],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Admin",
+      "email": "bob@example.com",
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "bob123", "temporary": false }],
+      "realmRoles": ["admin", "user"]
+    }
+  ]
+}
