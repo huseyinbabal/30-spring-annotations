@@ -131,3 +131,66 @@ curl -s -X POST http://localhost:8080/api/tasks \
 ```bash
 curl -s http://localhost:8080/api/tasks/999 | jq
 ```
+
+## Spring + Keycloak + JWT
+```bash
+TOKEN=$(curl -s -X POST "http://localhost:9090/realms/taskapi/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=task-api-client" \
+  -d "username=alice" \
+  -d "password=alice123" | jq -r '.access_token')
+```
+
+Now let's call the API with this token:
+
+```bash
+# Create a task -- should work (alice has USER role)
+curl -s -X POST http://localhost:8080/api/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Learn OAuth2","description":"Watch this video","priority":"HIGH","categoryId":1}' | jq
+```
+
+Works. 201 Created.
+
+```bash
+# Get all tasks -- should work
+curl -s http://localhost:8080/api/tasks \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+Works. Let's try to delete -- alice is NOT an admin:
+
+```bash
+# Delete task -- should fail (alice has no ADMIN role)
+curl -s -o /dev/null -w "%{http_code}" -X DELETE http://localhost:8080/api/tasks/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`403 Forbidden`. Exactly what we expected. Alice can't delete tasks.
+
+Now let's get a token for `bob` -- he has both `user` and `admin` roles:
+
+```bash
+TOKEN=$(curl -s -X POST "http://localhost:9090/realms/taskapi/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=task-api-client" \
+  -d "username=bob" \
+  -d "password=bob123" | jq -r '.access_token')
+
+# Delete task -- should work (bob has ADMIN role)
+curl -s -o /dev/null -w "%{http_code}" -X DELETE http://localhost:8080/api/tasks/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`204 No Content`. Bob can delete. Role-based access control is working.
+
+And just to be complete -- what happens without a token?
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/tasks
+```
+
+`401 Unauthorized`. The API is fully locked down.
