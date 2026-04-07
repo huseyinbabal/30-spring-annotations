@@ -6,6 +6,7 @@ import com.example.taskmanager.model.Task;
 import com.example.taskmanager.service.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,7 @@ public class TaskController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('USER')")
     public TaskResponse createTask(@Valid @RequestBody CreateTaskRequest request) {
         Task task = taskService.createTask(
                 request.title(),
@@ -69,6 +71,7 @@ public class TaskController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
     public void deleteTask(@PathVariable Long id) {
         taskService.deleteTask(id);
     }

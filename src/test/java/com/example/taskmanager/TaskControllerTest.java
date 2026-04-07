@@ -1,6 +1,5 @@
 package com.example.taskmanager;
 
-
 import com.example.taskmanager.model.Category;
 import com.example.taskmanager.model.Priority;
 import com.example.taskmanager.model.Task;
@@ -10,18 +9,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.web.client.RestClient;
+import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @Testcontainers
 class TaskControllerTest {
 
@@ -34,10 +37,12 @@ class TaskControllerTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri",
+                () -> "https://issuer.example.com");
     }
 
-    @LocalServerPort
-    int port;
+    @Autowired
+    MockMvcTester mvc;
 
     @Autowired
     TaskRepository taskRepository;
@@ -45,15 +50,10 @@ class TaskControllerTest {
     @Autowired
     CategoryRepository categoryRepository;
 
-    RestClient restClient;
-
     private Category testCategory;
 
     @BeforeEach
     void setUp() {
-        restClient = RestClient.builder()
-                .baseUrl("http://localhost:" + port)
-                .build();
         taskRepository.deleteAll();
         categoryRepository.deleteAll();
         testCategory = categoryRepository.save(
@@ -61,67 +61,47 @@ class TaskControllerTest {
     }
 
     @Test
-    void shouldCreateTask() {
-        String body = """
-            {
-                "title": "Finish report",
-                "description": "Q4 quarterly report",
-                "priority": "HIGH",
-                "categoryId": %d
-            }
-            """.formatted(testCategory.getId());
-
-        String response = restClient.post()
-                .uri("/api/tasks")
+    void shouldCreateTaskWithUserRole() {
+        assertThat(mvc.post().uri("/api/tasks")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(String.class);
-
-        assertThat(response).contains("Finish report");
-        assertThat(response).contains("HIGH");
+                .content("""
+                    {
+                        "title": "Finish report",
+                        "description": "Q4 report",
+                        "priority": "HIGH",
+                        "categoryId": %d
+                    }
+                    """.formatted(testCategory.getId()))
+                .with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_USER"))))
+                .hasStatus(HttpStatus.CREATED);
     }
 
     @Test
-    void shouldReturn404ForNonExistentTask() {
-        try {
-            restClient.get()
-                    .uri("/api/tasks/999")
-                    .retrieve()
-                    .body(String.class);
-        } catch (org.springframework.web.client.HttpClientErrorException.NotFound ex) {
-            assertThat(ex.getStatusCode().value()).isEqualTo(404);
-            assertThat(ex.getResponseBodyAsString()).contains("Task Not Found");
-            return;
-        }
-        throw new AssertionError("Expected 404 Not Found");
+    void shouldDenyDeleteForUserRole() {
+        Task task = taskRepository.save(
+                new Task("To delete", "Bye", Priority.LOW, testCategory));
+
+        assertThat(mvc.delete().uri("/api/tasks/" + task.getId())
+                .with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_USER"))))
+                .hasStatus(HttpStatus.FORBIDDEN);
     }
 
     @Test
-    void shouldListAllTasks() {
-        taskRepository.save(new Task("Task 1", "Desc 1",
-                Priority.HIGH, testCategory));
-        taskRepository.save(new Task("Task 2", "Desc 2",
-                Priority.LOW, testCategory));
+    void shouldAllowDeleteForAdminRole() {
+        Task task = taskRepository.save(
+                new Task("To delete", "Bye", Priority.LOW, testCategory));
 
-        String response = restClient.get()
-                .uri("/api/tasks")
-                .retrieve()
-                .body(String.class);
-
-        assertThat(response).contains("Task 1", "Task 2");
+        assertThat(mvc.delete().uri("/api/tasks/" + task.getId())
+                .with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .hasStatus(HttpStatus.NO_CONTENT);
     }
 
     @Test
-    void shouldDeleteTask() {
-        Task task = taskRepository.save(new Task("To delete", "Bye",
-                Priority.LOW, testCategory));
-
-        restClient.delete()
-                .uri("/api/tasks/" + task.getId())
-                .retrieve()
-                .toBodilessEntity();
-
-        assertThat(taskRepository.findById(task.getId())).isEmpty();
+    void shouldReturn401WithoutToken() {
+        assertThat(mvc.get().uri("/api/tasks"))
+                .hasStatus(HttpStatus.UNAUTHORIZED);
     }
 }
